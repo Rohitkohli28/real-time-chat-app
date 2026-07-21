@@ -1,48 +1,39 @@
-import { useContext } from 'react';
-import { ChatContext } from '../../context/ChatContext';
+import { motion } from 'framer-motion';
 
 const TypingIndicator = ({ users }) => {
-  const { theme } = useContext(ChatContext);
-  const isDark = theme === 'dark';
-
   if (!users || users.length === 0) return null;
 
   const names = users.map((u) => u.username);
   let text;
   if (names.length === 1) {
-    text = `${names[0]} is typing`;
+    text = `${names[0]} is typing...`;
   } else if (names.length === 2) {
-    text = `${names[0]} and ${names[1]} are typing`;
+    text = `${names[0]} and ${names[1]} are typing...`;
   } else {
-    text = `${names.length} people are typing`;
+    text = `${names.length} members are typing...`;
   }
 
   return (
-    <div className="flex items-center gap-2 animate-fade-in">
-      <div className="flex gap-1">
-        <span
-          className={`w-2 h-2 rounded-full animate-bounce-dot ${
-            isDark ? 'bg-dark-muted' : 'bg-gray-400'
-          }`}
-          style={{ animationDelay: '0s' }}
-        />
-        <span
-          className={`w-2 h-2 rounded-full animate-bounce-dot ${
-            isDark ? 'bg-dark-muted' : 'bg-gray-400'
-          }`}
-          style={{ animationDelay: '0.16s' }}
-        />
-        <span
-          className={`w-2 h-2 rounded-full animate-bounce-dot ${
-            isDark ? 'bg-dark-muted' : 'bg-gray-400'
-          }`}
-          style={{ animationDelay: '0.32s' }}
-        />
+    <motion.div 
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 6 }}
+      className="flex items-center gap-2.5 px-3 py-1.5 rounded-full glass-pill border border-white/10 w-fit text-slate-300 shadow-sm"
+    >
+      <div className="flex items-center gap-1">
+        {[0, 1, 2].map((i) => (
+          <motion.span
+            key={i}
+            animate={{ y: [0, -5, 0] }}
+            transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
+            className="w-1.5 h-1.5 rounded-full bg-pink-400"
+          />
+        ))}
       </div>
-      <span className={`text-xs italic ${isDark ? 'text-dark-muted' : 'text-gray-500'}`}>
+      <span className="text-[11px] font-semibold tracking-wide">
         {text}
       </span>
-    </div>
+    </motion.div>
   );
 };
 

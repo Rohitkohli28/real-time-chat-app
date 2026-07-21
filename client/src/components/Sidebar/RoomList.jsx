@@ -1,4 +1,5 @@
 import { useContext, useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ChatContext } from '../../context/ChatContext';
 import { useSocket } from '../../hooks/useSocket';
 import { useAuth } from '../../hooks/useAuth';
@@ -12,7 +13,6 @@ const RoomList = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
-  const isDark = theme === 'dark';
 
   // Fetch rooms on mount
   useEffect(() => {
@@ -27,10 +27,21 @@ const RoomList = () => {
     fetchRooms();
   }, [setRooms]);
 
+  // Global Ctrl+K / Cmd+K listener to focus room search
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        document.getElementById('room-search')?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleJoinRoom = (room) => {
     if (activeRoom?._id === room._id) return;
 
-    // Leave current room
     if (activeRoom && socket) {
       socket.emit('leave_room', {
         roomId: activeRoom._id,
@@ -38,7 +49,6 @@ const RoomList = () => {
       });
     }
 
-    // Join new room
     if (socket) {
       socket.emit('join_room', {
         roomId: room._id,
@@ -50,7 +60,6 @@ const RoomList = () => {
     clearUnread(room._id);
     setRoomMessages([]);
     
-    // Close sidebar on mobile screens
     if (window.innerWidth < 768) {
       setSidebarOpen(false);
     }
@@ -78,136 +87,155 @@ const RoomList = () => {
   );
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Search */}
-      <div className="p-3">
-        <div className="relative">
-          <svg className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isDark ? 'text-dark-muted' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div className="flex flex-col h-full gap-2">
+      {/* Floating Glass Search */}
+      <div className="pt-2 px-1">
+        <div className="relative group">
+          <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-pink-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           <input
             id="room-search"
             type="text"
-            placeholder="Search rooms..."
+            placeholder="Search channels..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className={`w-full pl-10 pr-4 py-2 rounded-lg text-sm transition-all input-focus-ring ${
-              isDark
-                ? 'bg-white/5 border border-white/10 text-white placeholder-white/30'
-                : 'bg-gray-100 border border-gray-200 text-gray-800 placeholder-gray-400'
-            }`}
+            className="w-full pl-10 pr-12 py-2 rounded-xl text-xs font-medium glass-input text-slate-100 placeholder-slate-400 outline-none"
           />
+          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 rounded bg-white/10 text-[9px] font-mono text-slate-300 border border-white/10 pointer-events-none">
+            ⌘K
+          </kbd>
         </div>
       </div>
 
       {/* Room list */}
-      <div className="flex-1 overflow-y-auto px-2">
-        {filteredRooms.map((room) => (
-          <button
-            key={room._id}
-            id={`room-${room.name}`}
-            onClick={() => handleJoinRoom(room)}
-            className={`w-full text-left px-3 py-3 rounded-xl mb-1 transition-all group ${
-              activeRoom?._id === room._id
-                ? isDark
-                  ? 'bg-dark-accent/20 text-white'
-                  : 'bg-light-accent/10 text-light-accent'
-                : isDark
-                  ? 'hover:bg-white/5 text-dark-muted hover:text-white'
-                  : 'hover:bg-gray-100 text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className={`text-lg ${activeRoom?._id === room._id ? '' : 'opacity-60 group-hover:opacity-100'}`}>
-                  #
-                </span>
-                <span className="font-medium truncate">{room.name}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {unreadCounts[room._id] > 0 && (
-                  <span className="bg-dark-accent text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
-                    {unreadCounts[room._id] > 9 ? '9+' : unreadCounts[room._id]}
+      <div className="flex-1 overflow-y-auto px-1 space-y-1">
+        <div className="px-2 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+          <span>Channels ({filteredRooms.length})</span>
+        </div>
+
+        {filteredRooms.map((room) => {
+          const isActive = activeRoom?._id === room._id;
+          const unread = unreadCounts[room._id] || 0;
+
+          return (
+            <motion.button
+              key={room._id}
+              id={`room-${room.name}`}
+              onClick={() => handleJoinRoom(room)}
+              whileHover={{ scale: 1.01, x: 2 }}
+              whileTap={{ scale: 0.98 }}
+              className={`w-full text-left p-3 rounded-xl transition-all relative overflow-hidden group ${
+                isActive
+                  ? 'bg-gradient-to-r from-pink-500/20 via-purple-500/15 to-transparent border border-pink-500/30 text-white shadow-glow-accent'
+                  : 'hover:bg-white/5 text-slate-300 hover:text-white border border-transparent'
+              }`}
+            >
+              {/* Active Room Indicator Light Bar */}
+              {isActive && (
+                <motion.div
+                  layoutId="activeIndicator"
+                  className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full gradient-accent shadow-glow-accent"
+                />
+              )}
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-colors ${
+                    isActive ? 'gradient-accent text-white shadow-md' : 'bg-white/5 text-slate-400 group-hover:text-pink-400'
+                  }`}>
+                    #
+                  </div>
+                  <div className="min-w-0">
+                    <span className="font-semibold text-xs tracking-wide truncate block">{room.name}</span>
+                    {room.description && (
+                      <p className="text-[10px] text-slate-400 truncate opacity-70 group-hover:opacity-100 transition-opacity">
+                        {room.description}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {unread > 0 && (
+                    <motion.span 
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      className="gradient-accent text-white text-[10px] rounded-full px-2 py-0.5 font-extrabold shadow-glow-accent"
+                    >
+                      {unread > 9 ? '9+' : unread}
+                    </motion.span>
+                  )}
+                  <span className="text-[10px] text-slate-400 bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+                    {room.members?.length || 0} 👤
                   </span>
-                )}
-                <span className={`text-xs ${isDark ? 'text-dark-muted' : 'text-gray-400'}`}>
-                  {room.members?.length || 0}
-                  <span className="ml-1">👤</span>
-                </span>
+                </div>
               </div>
-            </div>
-            {room.description && (
-              <p className={`text-xs mt-1 truncate ${isDark ? 'text-dark-muted/60' : 'text-gray-400'}`}>
-                {room.description}
-              </p>
-            )}
-          </button>
-        ))}
+            </motion.button>
+          );
+        })}
       </div>
 
-      {/* Create room */}
-      <div className={`p-3 border-t ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
-        {showCreate ? (
-          <form onSubmit={handleCreateRoom} className="space-y-2">
-            <input
-              id="new-room-name"
-              type="text"
-              placeholder="Room name"
-              value={newRoomName}
-              onChange={(e) => setNewRoomName(e.target.value)}
-              required
-              className={`w-full px-3 py-2 rounded-lg text-sm input-focus-ring ${
-                isDark
-                  ? 'bg-white/5 border border-white/10 text-white placeholder-white/30'
-                  : 'bg-gray-100 border border-gray-200 text-gray-800 placeholder-gray-400'
-              }`}
-            />
-            <input
-              id="new-room-desc"
-              type="text"
-              placeholder="Description (optional)"
-              value={newRoomDesc}
-              onChange={(e) => setNewRoomDesc(e.target.value)}
-              className={`w-full px-3 py-2 rounded-lg text-sm input-focus-ring ${
-                isDark
-                  ? 'bg-white/5 border border-white/10 text-white placeholder-white/30'
-                  : 'bg-gray-100 border border-gray-200 text-gray-800 placeholder-gray-400'
-              }`}
-            />
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                className="flex-1 py-2 rounded-lg gradient-accent text-white text-sm font-medium hover:opacity-90 transition-all"
-              >
-                Create
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowCreate(false)}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
-                  isDark ? 'bg-white/5 text-white hover:bg-white/10' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        ) : (
-          <button
-            id="create-room-btn"
-            onClick={() => setShowCreate(true)}
-            className={`w-full py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${
-              isDark
-                ? 'bg-white/5 text-dark-muted hover:bg-white/10 hover:text-white'
-                : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-800'
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            New Room
-          </button>
-        )}
+      {/* Create Room Footer Form */}
+      <div className="pt-2 border-t border-white/10 px-1">
+        <AnimatePresence mode="wait">
+          {showCreate ? (
+            <motion.form 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              onSubmit={handleCreateRoom} 
+              className="space-y-2 p-3 rounded-xl glass-card border border-white/10"
+            >
+              <h4 className="text-xs font-bold text-slate-200">Create New Channel</h4>
+              <input
+                id="new-room-name"
+                type="text"
+                placeholder="Channel name"
+                value={newRoomName}
+                onChange={(e) => setNewRoomName(e.target.value)}
+                required
+                className="w-full px-3 py-1.5 rounded-lg text-xs glass-input text-slate-100 outline-none"
+              />
+              <input
+                id="new-room-desc"
+                type="text"
+                placeholder="Description (optional)"
+                value={newRoomDesc}
+                onChange={(e) => setNewRoomDesc(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg text-xs glass-input text-slate-100 outline-none"
+              />
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="submit"
+                  className="flex-1 py-1.5 rounded-lg gradient-accent text-white text-xs font-bold hover:opacity-90 transition-all shadow-glow-accent"
+                >
+                  Create
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCreate(false)}
+                  className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-white/5 text-slate-300 hover:bg-white/10 transition-all"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.form>
+          ) : (
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              id="create-room-btn"
+              onClick={() => setShowCreate(true)}
+              className="w-full py-2.5 rounded-xl text-xs font-bold border border-dashed border-white/15 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white transition-all flex items-center justify-center gap-2 group"
+            >
+              <div className="w-5 h-5 rounded-md gradient-accent flex items-center justify-center text-white text-xs shadow-sm group-hover:rotate-90 transition-transform">
+                +
+              </div>
+              Create Channel
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
