@@ -5,10 +5,11 @@ const REFRESH_TOKEN_TTL = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
 const ACCESS_COOKIE_MAX_AGE = 15 * 60 * 1000;
 const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
-const getRefreshSecret = () => process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET;
+const getJwtSecret = () => process.env.JWT_SECRET || 'chatapp_default_jwt_secret_key_2026';
+const getRefreshSecret = () => process.env.JWT_REFRESH_SECRET || getJwtSecret();
 
 const generateAccessToken = (id) => {
-  return jwt.sign({ id, type: 'access' }, process.env.JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL });
+  return jwt.sign({ id, type: 'access' }, getJwtSecret(), { expiresIn: ACCESS_TOKEN_TTL });
 };
 
 const generateRefreshToken = (id) => {
@@ -46,7 +47,7 @@ const clearAuthCookies = (res) => {
   res.clearCookie('refreshToken', options);
 };
 
-const verifyAccessToken = (token) => jwt.verify(token, process.env.JWT_SECRET);
+const verifyAccessToken = (token) => jwt.verify(token, getJwtSecret());
 
 const verifyRefreshToken = (token) => jwt.verify(token, getRefreshSecret());
 

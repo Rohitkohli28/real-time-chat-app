@@ -32,6 +32,21 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('accessToken');
+    if (token && !config.headers.Authorization) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (refreshToken && !config.headers['X-Refresh-Token']) {
+      config.headers['X-Refresh-Token'] = refreshToken;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -47,6 +62,9 @@ api.interceptors.response.use(
         return new Promise(function(resolve, reject) {
           failedQueue.push({resolve, reject})
         }).then(token => {
+          if (token) {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+          }
           return api(originalRequest);
         }).catch(err => {
           return Promise.reject(err);
@@ -57,13 +75,18 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        await axios.post(
+        const storedRefreshToken = localStorage.getItem('refreshToken');
+        const { data } = await axios.post(
             `${api.defaults.baseURL}/auth/refresh`,
-            {},
+            { refreshToken: storedRefreshToken },
             { withCredentials: true }
         );
+        if (data?.accessToken) {
+          localStorage.setItem('accessToken', data.accessToken);
+          originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+        }
         isRefreshing = false;
-        processQueue(null);
+        processQueue(null, data?.accessToken);
         return api(originalRequest);
       } catch (err) {
         isRefreshing = false;

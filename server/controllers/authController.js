@@ -315,24 +315,39 @@ const logout = async (req, res) => {
 // @desc    Refresh Token
 // @route   POST /api/auth/refresh
 const refresh = async (req, res) => {
+  const tokenSource = req.cookies?.refreshToken ? 'cookie' : (req.headers['x-refresh-token'] ? 'x-refresh-token header' : (req.body?.refreshToken ? 'body' : 'none'));
+  const refreshToken = req.cookies?.refreshToken || req.headers['x-refresh-token'] || req.body?.refreshToken;
+
+  console.log(`[auth/refresh] Request received. Token source: ${tokenSource}`);
+
+  if (!refreshToken) {
+    console.warn('[auth/refresh] 401 - Refresh token missing from request (cookie, header, body)');
+    return res.status(401).json({ message: 'No refresh token provided', code: 'NO_REFRESH_TOKEN' });
+  }
+
   try {
-    const { refreshToken } = req.cookies;
-    if (!refreshToken) return res.status(401).json({ message: 'No refresh token' });
-
     const decoded = verifyRefreshToken(refreshToken);
-    const user = await User.findById(decoded.id);
+    console.log(`[auth/refresh] Refresh token JWT signature valid for user ID: ${decoded.id}`);
 
-    if (!user || user.refreshToken !== refreshToken) {
-      return res.status(401).json({ message: 'Invalid refresh token' });
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      console.warn(`[auth/refresh] 401 - User ID ${decoded.id} not found in database`);
+      return res.status(401).json({ message: 'User not found', code: 'USER_NOT_FOUND' });
+    }
+
+    if (user.refreshToken !== refreshToken) {
+      console.warn(`[auth/refresh] 401 - Refresh token mismatch in database for ${user.email}`);
+      return res.status(401).json({ message: 'Invalid refresh token', code: 'REFRESH_TOKEN_MISMATCH' });
     }
 
     const newAccessToken = generateAccessToken(user._id);
-    setAuthCookies(res, newAccessToken, refreshToken); // Keep same refresh token
-    console.log(`[auth] Access token refreshed for ${user.email}`);
+    setAuthCookies(res, newAccessToken, refreshToken);
+    console.log(`[auth/refresh] 200 - Access token successfully refreshed for ${user.email}`);
 
-    res.json({ message: 'Token refreshed', accessToken: newAccessToken });
+    res.json({ message: 'Token refreshed', accessToken: newAccessToken, refreshToken });
   } catch (error) {
-    res.status(401).json({ message: 'Invalid refresh token' });
+    console.warn(`[auth/refresh] 401 - Refresh token verification failed: ${error.message}`);
+    res.status(401).json({ message: 'Invalid or expired refresh token', code: 'REFRESH_TOKEN_EXPIRED', error: error.message });
   }
 };
 

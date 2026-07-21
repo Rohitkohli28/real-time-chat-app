@@ -17,8 +17,15 @@ export const SocketProvider = ({ children }) => {
     let isActive = true;
 
     if (user) {
+      const token = user.accessToken || user.token || localStorage.getItem('accessToken');
+      const refreshToken = user.refreshToken || localStorage.getItem('refreshToken');
+
       const newSocket = io(SOCKET_URL, {
         withCredentials: true,
+        auth: {
+          token,
+          refreshToken,
+        },
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: 10,
@@ -40,7 +47,12 @@ export const SocketProvider = ({ children }) => {
           try {
             console.log('[socket] Attempting token refresh before reconnect...');
             const api = (await import('../services/api')).default;
-            await api.post('/auth/refresh');
+            const currentRefreshToken = user.refreshToken || localStorage.getItem('refreshToken');
+            const { data } = await api.post('/auth/refresh', { refreshToken: currentRefreshToken });
+            if (data?.accessToken) {
+              localStorage.setItem('accessToken', data.accessToken);
+              newSocket.auth = { ...newSocket.auth, token: data.accessToken };
+            }
             console.log('[socket] Token refreshed. Reconnecting socket...');
             if (isActive) newSocket.connect();
           } catch (refreshErr) {

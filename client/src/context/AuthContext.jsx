@@ -34,6 +34,13 @@ export const AuthProvider = ({ children }) => {
     });
   };
 
+  const handleAuthSuccess = (data) => {
+    if (data?.accessToken) localStorage.setItem('accessToken', data.accessToken);
+    if (data?.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
+    setUser(data);
+    saveAccount(data);
+  };
+
   // Auto-login on page refresh by checking cookie via /auth/me
   useEffect(() => {
     const loadUser = async () => {
@@ -43,6 +50,8 @@ export const AuthProvider = ({ children }) => {
         console.debug('[auth] Session restored');
       } catch (error) {
         console.debug('[auth] No active session', error.response?.data || error.message);
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
         setUser(null);
       } finally {
         setLoading(false);
@@ -54,6 +63,8 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const handleSessionExpired = () => {
       console.warn('[auth] Session expired. Clearing current user.');
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
       setUser(null);
     };
 
@@ -64,8 +75,7 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
     console.debug('[auth] Login successful');
-    setUser(data);
-    saveAccount(data);
+    handleAuthSuccess(data);
     return data;
   };
 
@@ -82,24 +92,21 @@ export const AuthProvider = ({ children }) => {
   const verifyEmail = async (email, otp) => {
     const { data } = await api.post('/auth/verify-email', { email, otp });
     console.debug('[auth] Email verification login successful');
-    setUser(data);
-    saveAccount(data);
+    handleAuthSuccess(data);
     return data;
   };
   
   const googleLogin = async (token) => {
     const { data } = await api.post('/auth/google', { token });
     console.debug('[auth] Google login successful');
-    setUser(data);
-    saveAccount(data);
+    handleAuthSuccess(data);
     return data;
   };
 
   const switchUser = async (token) => {
     const { data } = await api.post('/auth/switch', { token });
     console.debug('[auth] Account switch successful');
-    setUser(data);
-    saveAccount(data);
+    handleAuthSuccess(data);
     return data;
   };
 
@@ -109,6 +116,8 @@ export const AuthProvider = ({ children }) => {
     } catch(e) {
       console.warn('[auth] Logout request failed; clearing local state anyway', e.response?.data || e.message);
     }
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
     setUser(null);
   };
 
