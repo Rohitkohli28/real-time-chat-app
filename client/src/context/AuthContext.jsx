@@ -16,7 +16,7 @@ export const AuthProvider = ({ children }) => {
   });
 
   const saveAccount = (accountData) => {
-    if (!accountData || !accountData._id || !accountData.token) return;
+    if (!accountData || !accountData._id || !accountData.refreshToken) return;
     setSavedAccounts((prev) => {
       const filtered = prev.filter((a) => a._id !== accountData._id);
       const updated = [
@@ -26,7 +26,7 @@ export const AuthProvider = ({ children }) => {
           username: accountData.username,
           email: accountData.email,
           avatar: accountData.avatar,
-          token: accountData.token, // Refresh token used as switch token
+          token: accountData.refreshToken, // Testing-only switch token.
         },
       ];
       localStorage.setItem('savedAccounts', JSON.stringify(updated));
@@ -40,7 +40,9 @@ export const AuthProvider = ({ children }) => {
       try {
         const { data } = await api.get('/auth/me');
         setUser(data);
+        console.debug('[auth] Session restored');
       } catch (error) {
+        console.debug('[auth] No active session', error.response?.data || error.message);
         setUser(null);
       } finally {
         setLoading(false);
@@ -49,8 +51,19 @@ export const AuthProvider = ({ children }) => {
     loadUser();
   }, []);
 
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      console.warn('[auth] Session expired. Clearing current user.');
+      setUser(null);
+    };
+
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+    return () => window.removeEventListener('auth:session-expired', handleSessionExpired);
+  }, []);
+
   const login = async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
+    console.debug('[auth] Login successful');
     setUser(data);
     saveAccount(data);
     return data;
@@ -68,6 +81,7 @@ export const AuthProvider = ({ children }) => {
 
   const verifyEmail = async (email, otp) => {
     const { data } = await api.post('/auth/verify-email', { email, otp });
+    console.debug('[auth] Email verification login successful');
     setUser(data);
     saveAccount(data);
     return data;
@@ -75,6 +89,7 @@ export const AuthProvider = ({ children }) => {
   
   const googleLogin = async (token) => {
     const { data } = await api.post('/auth/google', { token });
+    console.debug('[auth] Google login successful');
     setUser(data);
     saveAccount(data);
     return data;
@@ -82,6 +97,7 @@ export const AuthProvider = ({ children }) => {
 
   const switchUser = async (token) => {
     const { data } = await api.post('/auth/switch', { token });
+    console.debug('[auth] Account switch successful');
     setUser(data);
     saveAccount(data);
     return data;
@@ -90,7 +106,9 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
         await api.post('/auth/logout');
-    } catch(e) {}
+    } catch(e) {
+      console.warn('[auth] Logout request failed; clearing local state anyway', e.response?.data || e.message);
+    }
     setUser(null);
   };
 

@@ -8,6 +8,16 @@ const api = axios.create({
   withCredentials: true, // Send cookies with requests
 });
 
+const isAuthRoute = (url = '') => (
+  url.includes('/auth/login') ||
+  url.includes('/auth/register') ||
+  url.includes('/auth/google') ||
+  url.includes('/auth/verify-email') ||
+  url.includes('/auth/forgot-password') ||
+  url.includes('/auth/reset-password') ||
+  url.includes('/auth/refresh')
+);
+
 let isRefreshing = false;
 let failedQueue = [];
 
@@ -26,6 +36,10 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+
+    if (!originalRequest || isAuthRoute(originalRequest.url)) {
+      return Promise.reject(error);
+    }
     
     // Check if error is 401 and we haven't already retried
     if (error.response?.status === 401 && !originalRequest._retry) {
@@ -54,9 +68,7 @@ api.interceptors.response.use(
       } catch (err) {
         isRefreshing = false;
         processQueue(err, null);
-        if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
-           window.location.href = '/login';
-        }
+        window.dispatchEvent(new CustomEvent('auth:session-expired'));
         return Promise.reject(err);
       }
     }

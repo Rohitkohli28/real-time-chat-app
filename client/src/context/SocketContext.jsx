@@ -14,6 +14,8 @@ export const SocketProvider = ({ children }) => {
   const [connectionError, setConnectionError] = useState(null);
 
   useEffect(() => {
+    let isActive = true;
+
     if (user) {
       const newSocket = io(SOCKET_URL, {
         withCredentials: true,
@@ -24,25 +26,25 @@ export const SocketProvider = ({ children }) => {
       });
 
       newSocket.on('connect', () => {
-        console.log('🟢 Socket connected:', newSocket.id);
+        if (!isActive) return;
+        console.log('[socket] Connected:', newSocket.id);
         setIsConnected(true);
         setConnectionError(null);
       });
 
       newSocket.on('connect_error', async (err) => {
-        console.error('❌ Socket connection error:', err.message);
-        
-        // If auth failed, try to refresh token and reconnect
-        if (err.message === 'Authentication error' || err.message === 'User not found') {
+        if (!isActive) return;
+        console.error('[socket] Connection error:', err.message, err.data || '');
+
+        if (['NO_TOKEN', 'AUTH_FAILED'].includes(err.data?.code) || /auth/i.test(err.message)) {
           try {
-            console.log('🔄 Attempting to refresh token for Socket...');
-            // Import axios or api directly to make the call
+            console.log('[socket] Attempting token refresh before reconnect...');
             const api = (await import('../services/api')).default;
             await api.post('/auth/refresh');
-            console.log('✅ Token refreshed. Reconnecting socket...');
-            newSocket.connect();
+            console.log('[socket] Token refreshed. Reconnecting socket...');
+            if (isActive) newSocket.connect();
           } catch (refreshErr) {
-            console.error('❌ Token refresh failed for Socket:', refreshErr);
+            console.error('[socket] Token refresh failed:', refreshErr.response?.data || refreshErr.message);
             setIsConnected(false);
             setConnectionError('Authentication failed. Please log in again.');
           }
@@ -53,8 +55,10 @@ export const SocketProvider = ({ children }) => {
       });
 
       newSocket.on('disconnect', (reason) => {
-        console.log('🔴 Socket disconnected:', reason);
+        if (!isActive) return;
+        console.log('[socket] Disconnected:', reason);
         setIsConnected(false);
+
         if (reason === 'io server disconnect') {
           setConnectionError('Server disconnected. Please refresh.');
         } else {
@@ -63,27 +67,33 @@ export const SocketProvider = ({ children }) => {
       });
 
       newSocket.on('reconnect', () => {
-        console.log('🟢 Socket reconnected');
+        if (!isActive) return;
+        console.log('[socket] Reconnected');
         setIsConnected(true);
         setConnectionError(null);
       });
 
       newSocket.on('online_users', (users) => {
-        setOnlineUsers(users);
+        if (isActive) setOnlineUsers(users);
       });
 
       setSocket(newSocket);
 
       return () => {
+        isActive = false;
         newSocket.disconnect();
       };
-    } else {
-      if (socket) {
-        socket.disconnect();
-        setSocket(null);
-        setIsConnected(false);
-      }
     }
+
+    if (socket) {
+      socket.disconnect();
+      setSocket(null);
+      setIsConnected(false);
+    }
+
+    return () => {
+      isActive = false;
+    };
   }, [user]);
 
   return (

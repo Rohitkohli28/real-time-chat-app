@@ -1,41 +1,43 @@
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
 const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
 const Otp = require('../models/Otp');
 const sendEmail = require('../utils/sendEmail');
 const generateOtp = require('../utils/generateOtp');
+const {
+  generateAccessToken,
+  generateRefreshToken,
+  setAuthCookies,
+  clearAuthCookies,
+  verifyRefreshToken,
+} = require('../utils/tokens');
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-// Generate JWT tokens
-const generateAccessToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '15m' });
-};
+const buildAuthResponse = (user, accessToken, refreshToken) => ({
+  _id: user._id,
+  username: user.username,
+  email: user.email,
+  avatar: user.avatar,
+  bio: user.bio,
+  isEmailVerified: user.isEmailVerified,
+  accessToken,
+  refreshToken,
+  token: accessToken,
+});
 
-const generateRefreshToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, { expiresIn: '7d' });
-};
+const createUniqueGoogleUsername = async (name) => {
+  const base = (name || 'googleuser')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .slice(0, 20) || 'googleuser';
 
-// Set cookies helper
-const setTokenCookies = (res, accessToken, refreshToken) => {
-  const isProduction = process.env.NODE_ENV === 'production';
-  
-  const cookieOptions = {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'none' : 'lax',
-    maxAge: 15 * 60 * 1000, // 15 minutes
-  };
-
-  res.cookie('accessToken', accessToken, cookieOptions);
-
-  if (refreshToken) {
-    res.cookie('refreshToken', refreshToken, {
-      ...cookieOptions,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const suffix = Math.floor(1000 + Math.random() * 9000);
+    const username = `${base}${suffix}`;
+    const exists = await User.exists({ username });
+    if (!exists) return username;
   }
+
+  return `${base}${Date.now().toString().slice(-8)}`;
 };
 
 // @desc    Register a new user
@@ -133,17 +135,10 @@ const verifyEmail = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
-    setTokenCookies(res, accessToken, refreshToken);
+    setAuthCookies(res, accessToken, refreshToken);
+    console.log(`[auth] Email verified and session created for ${user.email}`);
 
-    res.status(200).json({
-      _id: user._id,
-      username: user.username,
-      email: user.email,
-      avatar: user.avatar,
-      bio: user.bio,
-      isEmailVerified: user.isEmailVerified,
-      token: refreshToken,
-    });
+    res.status(200).json(buildAuthResponse(user, accessToken, refreshToken));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -178,17 +173,10 @@ const login = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
-    setTokenCookies(res, accessToken, refreshToken);
+    setAuthCookies(res, accessToken, refreshToken);
+    console.log(`[auth] Password login succeeded for ${user.email}`);
 
-    res.json({
-      _id: user._id,
-      username: user.username,
-      email: user.email,
-      avatar: user.avatar,
-      bio: user.bio,
-      isEmailVerified: user.isEmailVerified,
-      token: refreshToken,
-    });
+    res.json(buildAuthResponse(user, accessToken, refreshToken));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -216,8 +204,9 @@ const googleLogin = async (req, res) => {
 
     if (!user) {
       // Create new user for google
+      const username = await createUniqueGoogleUsername(name);
       user = await User.create({
-        username: name.replace(/\s+/g, '') + Math.floor(Math.random() * 1000), // Basic unique username
+        username,
         email,
         password: Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-8), // Dummy password
         avatar: picture,
@@ -235,16 +224,10 @@ const googleLogin = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
-    setTokenCookies(res, accessToken, refreshToken);
+    setAuthCookies(res, accessToken, refreshToken);
+    console.log(`[auth] Google login succeeded for ${user.email}`);
 
-    res.json({
-      _id: user._id,
-      username: user.username,
-      email: user.email,
-      avatar: user.avatar,
-      bio: user.bio,
-      token: refreshToken,
-    });
+    res.json(buildAuthResponse(user, accessToken, refreshToken));
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -321,14 +304,8 @@ const logout = async (req, res) => {
             await user.save();
         }
     }
-    const isProduction = process.env.NODE_ENV === 'production';
-    const clearOptions = {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? 'none' : 'lax',
-    };
-    res.clearCookie('accessToken', clearOptions);
-    res.clearCookie('refreshToken', clearOptions);
+    clearAuthCookies(res);
+    console.log(`[auth] Logout completed for ${req.user?.email || 'unknown user'}`);
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -342,7 +319,7 @@ const refresh = async (req, res) => {
     const { refreshToken } = req.cookies;
     if (!refreshToken) return res.status(401).json({ message: 'No refresh token' });
 
-    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
+    const decoded = verifyRefreshToken(refreshToken);
     const user = await User.findById(decoded.id);
 
     if (!user || user.refreshToken !== refreshToken) {
@@ -350,9 +327,10 @@ const refresh = async (req, res) => {
     }
 
     const newAccessToken = generateAccessToken(user._id);
-    setTokenCookies(res, newAccessToken, refreshToken); // Keep same refresh token
+    setAuthCookies(res, newAccessToken, refreshToken); // Keep same refresh token
+    console.log(`[auth] Access token refreshed for ${user.email}`);
 
-    res.json({ message: 'Token refreshed' });
+    res.json({ message: 'Token refreshed', accessToken: newAccessToken });
   } catch (error) {
     res.status(401).json({ message: 'Invalid refresh token' });
   }
@@ -387,7 +365,7 @@ const switchAccount = async (req, res) => {
       return res.status(400).json({ message: 'Token is required' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
+    const decoded = verifyRefreshToken(token);
     const user = await User.findById(decoded.id);
 
     if (!user) {
@@ -404,17 +382,9 @@ const switchAccount = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
-    setTokenCookies(res, accessToken, newRefreshToken);
+    setAuthCookies(res, accessToken, newRefreshToken);
 
-    res.json({
-      _id: user._id,
-      username: user.username,
-      email: user.email,
-      avatar: user.avatar,
-      bio: user.bio,
-      isEmailVerified: user.isEmailVerified,
-      token: newRefreshToken
-    });
+    res.json(buildAuthResponse(user, accessToken, newRefreshToken));
   } catch (error) {
     res.status(401).json({ message: 'Invalid or expired switch token' });
   }
