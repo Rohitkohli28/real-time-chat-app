@@ -5,107 +5,102 @@ export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('chatapp_token'));
   const [loading, setLoading] = useState(true);
   const [savedAccounts, setSavedAccounts] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('chatapp_accounts') || '[]');
-    } catch {
+      const saved = localStorage.getItem('savedAccounts');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
       return [];
     }
   });
 
-  // Save account to multi-user list
-  const saveAccount = (userData, userToken) => {
+  const saveAccount = (accountData) => {
+    if (!accountData || !accountData._id || !accountData.token) return;
     setSavedAccounts((prev) => {
-      const filtered = prev.filter((a) => a._id !== userData._id);
+      const filtered = prev.filter((a) => a._id !== accountData._id);
       const updated = [
         ...filtered,
         {
-          _id: userData._id,
-          username: userData.username,
-          email: userData.email,
-          avatar: userData.avatar || '',
-          bio: userData.bio || '',
-          token: userToken,
+          _id: accountData._id,
+          username: accountData.username,
+          email: accountData.email,
+          avatar: accountData.avatar,
+          token: accountData.token, // Refresh token used as switch token
         },
       ];
-      localStorage.setItem('chatapp_accounts', JSON.stringify(updated));
+      localStorage.setItem('savedAccounts', JSON.stringify(updated));
       return updated;
     });
   };
 
-  // Auto-login on page refresh
+  // Auto-login on page refresh by checking cookie via /auth/me
   useEffect(() => {
     const loadUser = async () => {
-      if (token) {
-        try {
-          api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-          const { data } = await api.get('/auth/me');
-          setUser(data);
-        } catch (error) {
-          console.error('Auto-login failed:', error);
-          localStorage.removeItem('chatapp_token');
-          setToken(null);
-          setUser(null);
-        }
+      try {
+        const { data } = await api.get('/auth/me');
+        setUser(data);
+      } catch (error) {
+        setUser(null);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     loadUser();
-  }, [token]);
+  }, []);
 
   const login = async (email, password) => {
     const { data } = await api.post('/auth/login', { email, password });
-    localStorage.setItem('chatapp_token', data.token);
-    api.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
-    setToken(data.token);
     setUser(data);
-    saveAccount(data, data.token);
+    saveAccount(data);
     return data;
   };
 
-  const register = async (username, email, password) => {
+  const register = async (username, email, password, phone) => {
     const { data } = await api.post('/auth/register', {
       username,
       email,
       password,
+      phone,
     });
-    localStorage.setItem('chatapp_token', data.token);
-    api.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
-    setToken(data.token);
-    setUser(data);
-    saveAccount(data, data.token);
     return data;
   };
 
-  const logout = () => {
-    localStorage.removeItem('chatapp_token');
-    delete api.defaults.headers.common['Authorization'];
-    setToken(null);
+  const verifyEmail = async (email, otp) => {
+    const { data } = await api.post('/auth/verify-email', { email, otp });
+    setUser(data);
+    saveAccount(data);
+    return data;
+  };
+  
+  const googleLogin = async (token) => {
+    const { data } = await api.post('/auth/google', { token });
+    setUser(data);
+    saveAccount(data);
+    return data;
+  };
+
+  const switchUser = async (token) => {
+    const { data } = await api.post('/auth/switch', { token });
+    setUser(data);
+    saveAccount(data);
+    return data;
+  };
+
+  const logout = async () => {
+    try {
+        await api.post('/auth/logout');
+    } catch(e) {}
     setUser(null);
   };
 
-  // Switch to a different saved account
-  const switchUser = (newToken, userData) => {
-    localStorage.setItem('chatapp_token', newToken);
-    api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
-    setToken(newToken);
-    setUser(userData);
-  };
-
-  // Update user data (after profile edit)
   const updateUser = (data) => {
     setUser((prev) => ({ ...prev, ...data }));
-    // Also update in saved accounts
-    if (token) {
-      saveAccount({ ...user, ...data }, token);
-    }
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, login, register, logout, switchUser, updateUser, savedAccounts }}
+      value={{ user, loading, login, register, verifyEmail, googleLogin, logout, updateUser, switchUser, savedAccounts }}
     >
       {children}
     </AuthContext.Provider>

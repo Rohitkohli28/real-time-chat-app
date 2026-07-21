@@ -7,16 +7,16 @@ export const SocketContext = createContext();
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
 export const SocketProvider = ({ children }) => {
-  const { token, user } = useAuth();
+  const { user } = useAuth();
   const [socket, setSocket] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
 
   useEffect(() => {
-    if (token && user) {
+    if (user) {
       const newSocket = io(SOCKET_URL, {
-        auth: { token },
+        withCredentials: true,
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: 10,
@@ -29,12 +29,27 @@ export const SocketProvider = ({ children }) => {
         setConnectionError(null);
       });
 
-      newSocket.on('connect_error', (err) => {
+      newSocket.on('connect_error', async (err) => {
         console.error('❌ Socket connection error:', err.message);
-        setIsConnected(false);
-        setConnectionError(err.message === 'Authentication error'
-          ? 'Authentication failed. Please log in again.'
-          : 'Connection error. Retrying...');
+        
+        // If auth failed, try to refresh token and reconnect
+        if (err.message === 'Authentication error' || err.message === 'User not found') {
+          try {
+            console.log('🔄 Attempting to refresh token for Socket...');
+            // Import axios or api directly to make the call
+            const api = (await import('../services/api')).default;
+            await api.post('/auth/refresh');
+            console.log('✅ Token refreshed. Reconnecting socket...');
+            newSocket.connect();
+          } catch (refreshErr) {
+            console.error('❌ Token refresh failed for Socket:', refreshErr);
+            setIsConnected(false);
+            setConnectionError('Authentication failed. Please log in again.');
+          }
+        } else {
+          setIsConnected(false);
+          setConnectionError('Connection error. Retrying...');
+        }
       });
 
       newSocket.on('disconnect', (reason) => {
@@ -69,7 +84,7 @@ export const SocketProvider = ({ children }) => {
         setIsConnected(false);
       }
     }
-  }, [token, user]);
+  }, [user]);
 
   return (
     <SocketContext.Provider value={{ socket, onlineUsers, isConnected, connectionError }}>

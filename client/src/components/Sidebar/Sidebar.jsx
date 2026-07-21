@@ -4,7 +4,7 @@ import RoomList from './RoomList';
 import OnlineUsers from './OnlineUsers';
 
 const Sidebar = () => {
-  const { sidebarOpen, theme } = useContext(ChatContext);
+  const { sidebarOpen, setSidebarOpen, theme } = useContext(ChatContext);
   const [activeTab, setActiveTab] = useState('rooms');
   const isDark = theme === 'dark';
 
@@ -14,7 +14,7 @@ const Sidebar = () => {
       {sidebarOpen && (
         <div
           className="md:hidden fixed inset-0 bg-black/50 z-40"
-          onClick={() => {}}
+          onClick={() => setSidebarOpen(false)}
         />
       )}
 

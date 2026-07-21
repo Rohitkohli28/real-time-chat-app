@@ -5,7 +5,7 @@ import { useAuth } from '../../hooks/useAuth';
 import api from '../../services/api';
 
 const RoomList = () => {
-  const { rooms, setRooms, activeRoom, setActiveRoom, clearUnread, unreadCounts, theme, setRoomMessages } = useContext(ChatContext);
+  const { rooms, setRooms, activeRoom, setActiveRoom, clearUnread, unreadCounts, theme, setRoomMessages, setSidebarOpen } = useContext(ChatContext);
   const { socket } = useSocket();
   const { user } = useAuth();
   const [search, setSearch] = useState('');
@@ -49,6 +49,11 @@ const RoomList = () => {
     setActiveRoom(room);
     clearUnread(room._id);
     setRoomMessages([]);
+    
+    // Close sidebar on mobile screens
+    if (window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
   };
 
   const handleCreateRoom = async (e) => {

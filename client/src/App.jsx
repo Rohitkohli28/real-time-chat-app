@@ -3,6 +3,8 @@ import { useAuth } from './hooks/useAuth';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ChatPage from './pages/ChatPage';
 import Loader from './components/UI/Loader';
 
@@ -24,6 +26,14 @@ function App() {
         <Route
           path="/register"
           element={!user ? <RegisterPage /> : <Navigate to="/chat" />}
+        />
+        <Route
+          path="/verify-email"
+          element={!user ? <VerifyEmailPage /> : <Navigate to="/chat" />}
+        />
+        <Route
+          path="/forgot-password"
+          element={!user ? <ForgotPasswordPage /> : <Navigate to="/chat" />}
         />
         <Route
           path="/chat"

@@ -17,7 +17,33 @@ const userSchema = new mongoose.Schema(
       unique: true,
       trim: true,
       lowercase: true,
-      match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email'],
+      validate: [require('validator').isEmail, 'Please enter a valid email'],
+    },
+    phone: {
+      type: String,
+      trim: true,
+    },
+    provider: {
+      type: String,
+      enum: ['local', 'google', 'phone'],
+      default: 'local',
+    },
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    isPhoneVerified: {
+      type: Boolean,
+      default: false,
+    },
+    googleId: {
+      type: String,
+    },
+    refreshToken: {
+      type: String,
+    },
+    lastLogin: {
+      type: Date,
     },
     password: {
       type: String,

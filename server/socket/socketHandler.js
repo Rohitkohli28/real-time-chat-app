@@ -9,11 +9,39 @@ const onlineUsers = new Map();
 const userRooms = new Map();
 
 const socketHandler = (io) => {
+  // Helper to parse cookies
+  const parseCookies = (cookieHeader) => {
+    const list = {};
+    if (!cookieHeader) return list;
+    cookieHeader.split(';').forEach(cookie => {
+      let parts = cookie.split('=');
+      list[parts.shift().trim()] = decodeURI(parts.join('='));
+    });
+    return list;
+  };
+
   // Middleware: authenticate socket connections
   io.use(async (socket, next) => {
     try {
-      const token = socket.handshake.auth.token;
+      // Try getting token from HttpOnly cookies first
+      const cookies = parseCookies(socket.handshake.headers.cookie);
+      let token = cookies.accessToken;
+
+      // Fallback to handshake auth token
       if (!token) {
+        token = socket.handshake.auth?.token;
+      }
+
+      // Fallback to authorization header
+      if (!token && socket.handshake.headers.authorization) {
+        const parts = socket.handshake.headers.authorization.split(' ');
+        if (parts.length === 2 && parts[0] === 'Bearer') {
+          token = parts[1];
+        }
+      }
+
+      if (!token) {
+        console.log('❌ Socket connection rejected: No token found');
         return next(new Error('Authentication error'));
       }
 
@@ -21,12 +49,14 @@ const socketHandler = (io) => {
       const user = await User.findById(decoded.id).select('-password');
 
       if (!user) {
+        console.log('❌ Socket connection rejected: User not found in database');
         return next(new Error('User not found'));
       }
 
       socket.user = user;
       next();
     } catch (error) {
+      console.log('❌ Socket connection rejected: JWT verification failed', error.message);
       next(new Error('Authentication error'));
     }
   });
