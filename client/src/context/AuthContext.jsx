@@ -3,21 +3,35 @@ import api from '../services/api';
 
 export const AuthContext = createContext();
 
+const REMEMBERED_ACCOUNTS_KEY = 'rememberedAccounts';
+const MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days expiration for inactive sessions
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Initialize remembered accounts, filtering out expired items (> 7 days inactive)
   const [savedAccounts, setSavedAccounts] = useState(() => {
     try {
-      const saved = localStorage.getItem('savedAccounts');
-      return saved ? JSON.parse(saved) : [];
+      const raw = localStorage.getItem(REMEMBERED_ACCOUNTS_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      const now = Date.now();
+      const valid = parsed.filter(
+        (a) => a._id && a.provider !== 'guest' && (!a.lastActive || now - a.lastActive < MAX_SESSION_AGE_MS)
+      );
+      if (valid.length !== parsed.length) {
+        localStorage.setItem(REMEMBERED_ACCOUNTS_KEY, JSON.stringify(valid));
+      }
+      return valid;
     } catch (e) {
       return [];
     }
   });
 
-  const saveAccount = (accountData) => {
-    if (!accountData || !accountData._id || !accountData.refreshToken) return;
-    // Do NOT save temporary guest accounts
+  const saveAccount = (accountData, shouldRemember = false) => {
+    if (!accountData || !accountData._id || !shouldRemember) return;
+    // Strictly NEVER remember guest accounts
     if (accountData.provider === 'guest' || accountData.email?.endsWith('@guest.chatapp.local')) return;
 
     setSavedAccounts((prev) => {
@@ -29,10 +43,11 @@ export const AuthProvider = ({ children }) => {
           username: accountData.username,
           email: accountData.email,
           avatar: accountData.avatar,
-          token: accountData.refreshToken,
+          provider: accountData.provider || 'local',
+          lastActive: Date.now(),
         },
       ];
-      localStorage.setItem('savedAccounts', JSON.stringify(updated));
+      localStorage.setItem(REMEMBERED_ACCOUNTS_KEY, JSON.stringify(updated));
       return updated;
     });
   };
@@ -41,27 +56,29 @@ export const AuthProvider = ({ children }) => {
     setSavedAccounts((prev) => {
       const updated = prev.filter((a) => a._id !== id);
       if (updated.length > 0) {
-        localStorage.setItem('savedAccounts', JSON.stringify(updated));
+        localStorage.setItem(REMEMBERED_ACCOUNTS_KEY, JSON.stringify(updated));
       } else {
-        localStorage.removeItem('savedAccounts');
+        localStorage.removeItem(REMEMBERED_ACCOUNTS_KEY);
       }
       return updated;
     });
   };
 
   const clearSavedAccounts = () => {
-    localStorage.removeItem('savedAccounts');
+    localStorage.removeItem(REMEMBERED_ACCOUNTS_KEY);
     setSavedAccounts([]);
   };
 
-  const handleAuthSuccess = (data) => {
+  const handleAuthSuccess = (data, shouldRemember = false) => {
     if (data?.accessToken) localStorage.setItem('accessToken', data.accessToken);
     if (data?.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
     setUser(data);
-    saveAccount(data);
+    if (shouldRemember) {
+      saveAccount(data, true);
+    }
   };
 
-  // Auto-login on page refresh by checking cookie via /auth/me
+  // Auto-restore session via /auth/me cookie check
   useEffect(() => {
     const loadUser = async () => {
       try {
@@ -82,7 +99,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const handleSessionExpired = () => {
-      console.warn('[auth] Session expired. Clearing current user.');
+      console.warn('[auth] Session expired. Clearing active user.');
       localStorage.removeItem('accessToken');
       localStorage.removeItem('refreshToken');
       setUser(null);
@@ -92,10 +109,10 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('auth:session-expired', handleSessionExpired);
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (email, password, rememberMe = false) => {
     const { data } = await api.post('/auth/login', { email, password });
     console.debug('[auth] Login successful');
-    handleAuthSuccess(data);
+    handleAuthSuccess(data, rememberMe);
     return data;
   };
 
@@ -112,40 +129,46 @@ export const AuthProvider = ({ children }) => {
   const verifyEmail = async (email, otp) => {
     const { data } = await api.post('/auth/verify-email', { email, otp });
     console.debug('[auth] Email verification login successful');
-    handleAuthSuccess(data);
+    handleAuthSuccess(data, true);
     return data;
   };
-  
-  const googleLogin = async (token) => {
+
+  const googleLogin = async (token, rememberMe = false) => {
     const { data } = await api.post('/auth/google', { token });
     console.debug('[auth] Google login successful');
-    handleAuthSuccess(data);
+    handleAuthSuccess(data, rememberMe);
     return data;
   };
 
   const guestLogin = async (username) => {
     const { data } = await api.post('/auth/guest', { username });
-    console.debug('[auth] Guest login successful');
-    handleAuthSuccess(data);
+    console.debug('[auth] Guest login successful (not remembered)');
+    handleAuthSuccess(data, false); // Guest is never remembered
     return data;
   };
 
-  const switchUser = async (token) => {
-    const { data } = await api.post('/auth/switch', { token });
+  const switchUser = async (targetUserId, password) => {
+    const { data } = await api.post('/auth/switch', { targetUserId, password });
     console.debug('[auth] Account switch successful');
-    handleAuthSuccess(data);
+    handleAuthSuccess(data, true);
     return data;
   };
 
-  const logout = async () => {
+  const logout = async (options = {}) => {
+    const { forgetAccount = false } = options;
+    const currentUserId = user?._id;
+    const isGuest = user?.provider === 'guest' || user?.email?.endsWith('@guest.chatapp.local');
+
     try {
-        await api.post('/auth/logout');
-    } catch(e) {
+      await api.post('/auth/logout');
+    } catch (e) {
       console.warn('[auth] Logout request failed; clearing local state anyway', e.response?.data || e.message);
     }
-    if (user?._id) {
-      removeSavedAccount(user._id);
+
+    if (currentUserId && (forgetAccount || isGuest)) {
+      removeSavedAccount(currentUserId);
     }
+
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     setUser(null);

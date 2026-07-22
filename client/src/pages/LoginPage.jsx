@@ -13,6 +13,7 @@ const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [guestName, setGuestName] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -28,7 +29,7 @@ const LoginPage = () => {
       try {
         setIsSubmitting(true);
         setError('');
-        await login(email, password);
+        await login(email, password, rememberMe);
         navigate('/chat');
       } catch (err) {
         if (err.response?.status === 403) {
@@ -60,7 +61,7 @@ const LoginPage = () => {
 
   const handleGoogleSuccess = async (credentialResponse) => {
     try {
-      await googleLogin(credentialResponse.credential);
+      await googleLogin(credentialResponse.credential, rememberMe);
       navigate('/chat');
     } catch (err) {
       setError('Google login failed');
@@ -169,8 +170,17 @@ const LoginPage = () => {
                     {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
-                <div className="flex justify-end mt-2">
-                  <Link to="/forgot-password" className="text-xs text-indigo-400 hover:text-indigo-300">
+                <div className="flex items-center justify-between mt-3 text-xs">
+                  <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="rounded border-white/20 bg-black/30 text-indigo-500 focus:ring-0"
+                    />
+                    <span>Remember account on this device</span>
+                  </label>
+                  <Link to="/forgot-password" className="text-indigo-400 hover:text-indigo-300 font-medium">
                     Forgot password?
                   </Link>
                 </div>

@@ -371,37 +371,71 @@ const getMe = async (req, res) => {
   }
 };
 
-// @desc    Switch Account (Testing Mode)
+// @desc    Switch Account (Secure Re-authentication)
 // @route   POST /api/auth/switch
 const switchAccount = async (req, res) => {
   try {
-    const { token } = req.body;
-    if (!token) {
-      return res.status(400).json({ message: 'Token is required' });
+    const { targetUserId, password, token } = req.body;
+
+    if (!targetUserId && !token) {
+      return res.status(400).json({ message: 'Target user ID or session token is required' });
     }
 
-    const decoded = verifyRefreshToken(token);
-    const user = await User.findById(decoded.id);
+    let user;
+    if (token) {
+      try {
+        const decoded = verifyRefreshToken(token);
+        user = await User.findById(decoded.id).select('+password');
+      } catch (e) {
+        // Token expired or invalid
+      }
+    }
+
+    if (!user && targetUserId) {
+      user = await User.findById(targetUserId).select('+password');
+    }
 
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: 'Account not found', code: 'ACCOUNT_NOT_FOUND' });
     }
 
-    // Generate new tokens
+    // Do NOT allow switching to guest accounts
+    if (user.provider === 'guest') {
+      return res.status(403).json({ message: 'Guest sessions cannot be reactivated', code: 'GUEST_EXPIRED' });
+    }
+
+    // If password is provided, verify it
+    if (password) {
+      const isMatch = await user.matchPassword(password);
+      if (!isMatch) {
+        return res.status(401).json({ message: 'Invalid password for this account', code: 'INVALID_PASSWORD' });
+      }
+    } else {
+      // Require password re-authentication
+      return res.status(401).json({
+        message: 'Re-authentication required',
+        code: 'PASSWORD_REQUIRED',
+        userId: user._id,
+        email: user.email,
+        username: user.username,
+      });
+    }
+
+    // Generate new tokens upon successful re-auth
     const accessToken = generateAccessToken(user._id);
     const newRefreshToken = generateRefreshToken(user._id);
 
-    // Update refresh token in DB
     user.refreshToken = newRefreshToken;
     user.isOnline = true;
     user.lastLogin = new Date();
     await user.save();
 
     setAuthCookies(res, accessToken, newRefreshToken);
+    console.log(`[auth/switch] Secure account switch succeeded for ${user.email}`);
 
     res.json(buildAuthResponse(user, accessToken, newRefreshToken));
   } catch (error) {
-    res.status(401).json({ message: 'Invalid or expired switch token' });
+    res.status(500).json({ message: error.message });
   }
 };
 
