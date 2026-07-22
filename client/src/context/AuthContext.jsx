@@ -17,6 +17,9 @@ export const AuthProvider = ({ children }) => {
 
   const saveAccount = (accountData) => {
     if (!accountData || !accountData._id || !accountData.refreshToken) return;
+    // Do NOT save temporary guest accounts
+    if (accountData.provider === 'guest' || accountData.email?.endsWith('@guest.chatapp.local')) return;
+
     setSavedAccounts((prev) => {
       const filtered = prev.filter((a) => a._id !== accountData._id);
       const updated = [
@@ -26,12 +29,29 @@ export const AuthProvider = ({ children }) => {
           username: accountData.username,
           email: accountData.email,
           avatar: accountData.avatar,
-          token: accountData.refreshToken, // Testing-only switch token.
+          token: accountData.refreshToken,
         },
       ];
       localStorage.setItem('savedAccounts', JSON.stringify(updated));
       return updated;
     });
+  };
+
+  const removeSavedAccount = (id) => {
+    setSavedAccounts((prev) => {
+      const updated = prev.filter((a) => a._id !== id);
+      if (updated.length > 0) {
+        localStorage.setItem('savedAccounts', JSON.stringify(updated));
+      } else {
+        localStorage.removeItem('savedAccounts');
+      }
+      return updated;
+    });
+  };
+
+  const clearSavedAccounts = () => {
+    localStorage.removeItem('savedAccounts');
+    setSavedAccounts([]);
   };
 
   const handleAuthSuccess = (data) => {
@@ -123,6 +143,9 @@ export const AuthProvider = ({ children }) => {
     } catch(e) {
       console.warn('[auth] Logout request failed; clearing local state anyway', e.response?.data || e.message);
     }
+    if (user?._id) {
+      removeSavedAccount(user._id);
+    }
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     setUser(null);
@@ -134,7 +157,21 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, register, verifyEmail, googleLogin, guestLogin, logout, updateUser, switchUser, savedAccounts }}
+      value={{
+        user,
+        loading,
+        login,
+        register,
+        verifyEmail,
+        googleLogin,
+        guestLogin,
+        logout,
+        updateUser,
+        switchUser,
+        savedAccounts,
+        removeSavedAccount,
+        clearSavedAccounts,
+      }}
     >
       {children}
     </AuthContext.Provider>
