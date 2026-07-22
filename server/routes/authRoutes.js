@@ -10,6 +10,7 @@ const {
     logout,
     refresh,
     googleLogin,
+    guestLogin,
     switchAccount
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
@@ -18,6 +19,7 @@ router.post('/register', register);
 router.post('/verify-email', verifyEmail);
 router.post('/login', login);
 router.post('/google', googleLogin);
+router.post('/guest', guestLogin);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);
 router.post('/logout', protect, logout);

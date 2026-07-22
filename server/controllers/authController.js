@@ -405,6 +405,44 @@ const switchAccount = async (req, res) => {
   }
 };
 
+// @desc    Guest / Instant Identity Login
+// @route   POST /api/auth/guest
+const guestLogin = async (req, res) => {
+  try {
+    const { username } = req.body;
+    const rawName = username ? username.trim() : '';
+    if (!rawName) {
+      return res.status(400).json({ message: 'Display name is required for guest identity' });
+    }
+
+    const uniqueUsername = await createUniqueGoogleUsername(rawName);
+    const guestEmail = `${uniqueUsername.toLowerCase()}@guest.chatapp.local`;
+
+    const user = await User.create({
+      username: uniqueUsername,
+      email: guestEmail,
+      password: Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10),
+      isEmailVerified: true,
+      provider: 'guest',
+    });
+
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+
+    user.refreshToken = refreshToken;
+    user.isOnline = true;
+    user.lastLogin = new Date();
+    await user.save();
+
+    setAuthCookies(res, accessToken, refreshToken);
+    console.log(`[auth] Guest identity created & logged in for ${user.username}`);
+
+    res.status(201).json(buildAuthResponse(user, accessToken, refreshToken));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = { 
   register, 
   login, 
@@ -415,5 +453,6 @@ module.exports = {
   logout, 
   refresh,
   googleLogin,
+  guestLogin,
   switchAccount
 };

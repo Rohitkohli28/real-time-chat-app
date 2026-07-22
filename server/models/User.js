@@ -25,7 +25,7 @@ const userSchema = new mongoose.Schema(
     },
     provider: {
       type: String,
-      enum: ['local', 'google', 'phone'],
+      enum: ['local', 'google', 'phone', 'guest'],
       default: 'local',
     },
     isEmailVerified: {

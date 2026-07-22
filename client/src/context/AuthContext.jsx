@@ -103,6 +103,13 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
+  const guestLogin = async (username) => {
+    const { data } = await api.post('/auth/guest', { username });
+    console.debug('[auth] Guest login successful');
+    handleAuthSuccess(data);
+    return data;
+  };
+
   const switchUser = async (token) => {
     const { data } = await api.post('/auth/switch', { token });
     console.debug('[auth] Account switch successful');
@@ -127,7 +134,7 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, register, verifyEmail, googleLogin, logout, updateUser, switchUser, savedAccounts }}
+      value={{ user, loading, login, register, verifyEmail, googleLogin, guestLogin, logout, updateUser, switchUser, savedAccounts }}
     >
       {children}
     </AuthContext.Provider>
